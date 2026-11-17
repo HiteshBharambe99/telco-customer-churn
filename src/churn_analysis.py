@@ -1,25 +1,11 @@
 """
-Customer Churn Analysis — Telco dataset
-=======================================
+Telco customer churn analysis.
 
-End-to-end exploratory data analysis and a logistic-regression model that
-predicts customer churn and surfaces the main churn drivers.
+Cleans the data, does some EDA, then fits a logistic regression to predict
+churn and read off which factors drive it. Writes charts, metrics and the
+ranked drivers to outputs/.
 
-Pipeline:
-    1. Load and clean the raw data
-    2. Exploratory data analysis (saved as figures)
-    3. Feature engineering + preprocessing
-    4. Train / test split
-    5. Logistic-regression model with evaluation
-    6. Coefficient analysis -> key churn drivers
-
-Run:
     python src/churn_analysis.py
-
-Outputs (written to outputs/):
-    figures/*.png        EDA + model charts
-    metrics.json         model performance metrics
-    churn_drivers.csv    ranked feature coefficients
 """
 
 from __future__ import annotations
@@ -69,19 +55,14 @@ PALETTE = ["#4C72B0", "#DD8452"]
 def load_and_clean() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH)
 
-    # TotalCharges is read as object because new customers (tenure = 0) have
-    # a blank value. Coerce to numeric and impute those blanks with 0.
-    df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
-    df["TotalCharges"] = df["TotalCharges"].fillna(0)
+    # TotalCharges loads as text because new customers (tenure 0) have it blank.
+    df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce").fillna(0)
 
-    # SeniorCitizen is 0/1 -> make it readable for EDA, keep numeric copy too.
+    # 0/1 -> Yes/No just so it reads nicely in the EDA plots.
     df["SeniorCitizen"] = df["SeniorCitizen"].map({0: "No", 1: "Yes"})
 
-    # Target as binary.
     df["Churn"] = (df["Churn"] == "Yes").astype(int)
-
-    # customerID carries no predictive signal.
-    df = df.drop(columns=["customerID"])
+    df = df.drop(columns=["customerID"])  # just an ID, no signal
 
     print(f"Loaded {len(df):,} rows, {df.shape[1]} columns")
     print(f"Overall churn rate: {df['Churn'].mean():.1%}")
@@ -175,10 +156,9 @@ def build_features(df: pd.DataFrame):
     y = df["Churn"]
     X = df.drop(columns=["Churn"])
 
-    # One-hot encode all categorical columns; drop_first avoids collinearity.
+    # one-hot the categoricals, drop_first to avoid collinearity
     X = pd.get_dummies(X, drop_first=True)
 
-    # Keep continuous features for scaling.
     numeric = ["tenure", "MonthlyCharges", "TotalCharges"]
     return X, y, numeric
 
@@ -191,14 +171,14 @@ def train_and_evaluate(X: pd.DataFrame, y: pd.Series, numeric: list[str]) -> dic
         X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
     )
 
-    # Scale only the continuous columns.
+    # scale the numeric columns only (fit on train, apply to test)
     scaler = StandardScaler()
     X_train = X_train.copy()
     X_test = X_test.copy()
     X_train[numeric] = scaler.fit_transform(X_train[numeric])
     X_test[numeric] = scaler.transform(X_test[numeric])
 
-    # class_weight balances the ~27% / 73% churn split.
+    # balanced class weight because only ~27% of customers churn
     model = LogisticRegression(
         max_iter=1000, class_weight="balanced", random_state=RANDOM_STATE
     )
